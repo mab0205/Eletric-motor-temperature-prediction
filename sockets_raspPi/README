@@ -1,0 +1,24 @@
+# Recommendations for server.py
+- To ensure smooth operation of server.py, please follow these recommendations:
+
+1. Hardware Requirements:
+
+Raspberry Pi 3 or 4 is required for running the server.
+2. File Placement:
+
+Copy the server.py file to the /home/ directory on the Raspberry Pi.
+3. Dataset Location:
+
+Make sure the input dataset file (in .csv format) is placed in the same directory as server.py.
+4. Dependencies Installation:
+
+Install all the necessary dependencies to run the code with Python 3.0. Ensure that you have installed the required packages.
+5. Network Configuration:
+
+Ensure that the Raspberry Pi is connected to the same network as the client receiver. This is important for establishing communication between the server and the client.
+6. Time Sleep Adjustment:
+
+Adapt the time sleep in the code according to your requirements. Make sure that the time interval is not set to less than 5 seconds. Adjust the value as needed to meet your specific needs.
+7. Port Connection:
+
+Connect to port 5000 when establishing a connection with the server. Make sure that the client application is configured to connect to port 5000 for communication with the server.

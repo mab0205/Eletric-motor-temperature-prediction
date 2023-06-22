@@ -2,6 +2,11 @@ import os
 import pandas as pd
 import wandb
 import warnings
+import time
+import socket
+import io
+import matplotlib.pyplot as plt
+
 from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
 
 warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
@@ -178,35 +183,94 @@ def train_model(model, cfg, load_path, save_dir = None):
     shap_explainer.plot_shap_values(shap_values, os.path.join(p.out_path, 'shap'), p.features.keys())
     
 
+def receive_data_by_socket():
+    df_42 = pd.DataFrame()  
+    received_rows = 0  
+
+    while True:
+        # chuck = conjunto de dados recibido pelo socket 
+        chunk = sock.recv(21288)
+
+        if not chunk:  
+            break
+
+        try:
+            csv_string = chunk.decode()
+            df = pd.read_csv(io.StringIO(csv_string))
+            print(df.shape)
+            
+            #Otimizar as filas e colunas do df a 42,13
+            if df.shape[1] == 13 and not df.isnull().values.all():
+                remaining_rows = 42 - received_rows  
+
+                if df.shape[0] > remaining_rows:
+                    df = df.iloc[:remaining_rows, :13]
+
+                 # Concatenar filas al DataFrame df_42
+                df_42 = pd.concat([df_42, df], ignore_index=True) 
+                received_rows += df.shape[0] 
+
+                if received_rows >= 42:
+                    break
+
+        except pd.errors.EmptyDataError:
+            break
+
+    #recebe dados até cumplir com as carateristicas requeridas 
+    if df_42.shape[0] < 42 or df_42.shape[1] != 13:
+        df_42 = receive_data_by_socket() 
+    df_42 = df_42.replace('-', np.nan)
+
+    return df_42
 
 
 if __name__ == '__main__':
-
+    # Configurar parâmetros do modelo
     N_FEATURES = 10
     MAX_EPOCHS = 500
     LOG = True
     RESUME = False
     SAMPLE = 500000
 
+    # Carregar nome das features do modelo
+    feature_names = list(pd.read_csv(f'out/RNN_stator/shap/shap_features_RNN_stator.csv', index_col=0).head(10).index)
 
-    # train_model(rnn_rotor_model(N_FEATURES), rnn_rotor_cfg, 'out/RNN_rotor/model.h5', 'out/RNN_rotor/less_features')
-    # train_model(rnn_stator_model(N_FEATURES), rnn_stator_cfg, 'out/RNN_stator/model.h5', 'out/RNN_stator/less_features')
-    # train_model(cnn_rotor_model(N_FEATURES), tcn_rotor_cfg, 'out/TCN_rotor/model.h5', 'out/TCN_rotor/less_features')
-    train_model(cnn_stator_model(N_FEATURES), tcn_stator_cfg, 'out/TCN_stator/model.h5', 'out/TCN_stator/less_features')
+    # Criar a pipeline do modelo
+    p = Pipeline(rnn_stator_model(N_FEATURES), rnn_stator_cfg, feature_names=feature_names)
 
-    # import multiprocessing
+    # Cria connexão com o raspPi
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect(("raspberrypi", 5000))
 
-    # multiprocessing.set_start_method('spawn')
+    # Crear una lista para almacenar los valores de 'stator_winding'
+    stator_winding_values = []
 
-    # args = [
-    #     (rnn_rotor_model(N_FEATURES), rnn_rotor_cfg, 'out/RNN_rotor/model.h5', 'out/RNN_rotor'),
-    #     (rnn_stator_model(N_FEATURES), rnn_stator_cfg, 'out/RNN_stator/model.h5', 'out/RNN_stator'),
-    #     (cnn_rotor_model(N_FEATURES), tcn_rotor_cfg, 'out/TCN_rotor/model.h5', 'out/TCN_rotor'),
-    #     (cnn_stator_model(N_FEATURES), tcn_stator_cfg, 'out/TCN_stator/model.h5', 'out/TCN_stator')
-    # ]
+    # Definir el número de predicciones para calcular 'rul'
+    num_predictions = 30
 
-    # for arg in args:
-    #     p = multiprocessing.Process(target=train_model, args=arg)
-    #     p.start()
+    while True:
+        try:
+            # Receber los datos de los sockets
+            df = receive_data_by_socket()
 
+            # Procesar los datos
+            df_features = add_extra_features(df, [500, 2204, 9000, 6000])
+            df_in = df_features[feature_names].copy()
 
+            segmento = df_in.iloc[:42, :]
+            X = np.array(segmento)
+            X = X.reshape((1, 42, 10))
+            X = tf.convert_to_tensor(X)
+
+            prediction = p.model.predict(X)
+            print(prediction)
+
+            # Obtener el valor de 'stator_winding' de la predicción
+            stator_winding = prediction[0]  # Ajusta esto según la posición correcta de 'stator_winding' en 'prediction'
+
+            # Almacenar el valor de 'stator_winding'
+            stator_winding_values.append(stator_winding)
+            
+            
+        except:
+            continue
